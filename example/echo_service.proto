@@ -1,0 +1,14 @@
+import "google/protobuf/descriptor.proto";
+import "echo.proto";
+
+extend google.protobuf.MethodOptions
+{
+    optional int32 method_id = 1000;
+    optional string method_name = 1001;
+}
+
+service EchoService
+{
+    rpc Echo(ProtoEchoRequest) returns(ProtoEchoResponse) { option (method_id) = 1; option (method_name) = "echo"; }
+    rpc Echo2(ProtoEchoRequest) returns(ProtoEchoResponse) { option (method_id) = 2; option (method_name) = "echo2"; }
+}
