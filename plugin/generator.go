@@ -153,7 +153,8 @@ func (g *frogGen) generateService(file *generator.FileDescriptor, service *desc.
 
 	// Stub call method and go method
 	g.P("func (stub *", unexport(servName), "Stub) Call(method *"+frogPkg+".MethodDesc, ctx context.Context, in proto.Message, out proto.Message) error {")
-	g.P("call := <-stub.channel.Go(method, ctx, in, out).Done()")
+	g.P("call := stub.channel.Go(method, ctx, in, out)")
+	g.P("<-call.Done()")
 	g.P("return call.Error()")
 	g.P("}")
 	g.P()

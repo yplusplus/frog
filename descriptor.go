@@ -36,8 +36,8 @@ type MethodDesc struct {
 }
 
 // GetServiceDesc returns method's service descriptor
-func (md *MethodDesc) GetServiceDesc() *ServiceDesc {                                                                             
-    return md.service
+func (md *MethodDesc) GetServiceDesc() *ServiceDesc {
+	return md.service
 }
 
 var (
@@ -78,4 +78,3 @@ func GenerateServiceDesc(fileDescriptor []byte) {
 func ServiceDescriptor(servicename string) *ServiceDesc {
 	return serviceDescriptors[servicename]
 }
-

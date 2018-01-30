@@ -17,7 +17,7 @@ type RpcCall interface {
 	Request() proto.Message  // The request to the rpc
 	Response() proto.Message // The response from rpc
 	Error() error            // After completion, the error status.
-	Done() chan RpcCall      // Strobes when call is complete.
+	Done() chan struct{}     // Strobes when call is complete.
 }
 
 // RpcChannel represents a communication line to a Service which can

@@ -9,11 +9,12 @@ With the generated rpc interface, it is easy and flexibly to implement your own 
 + re-build and re-install protoc-gen-go
 ```
 
+And then, you can use following command to generate rpc code:
+`protoc --go_out=plugins=frog:. *.proto`
+
 ## Examples
 ```
 + cd github.com/yplusplus/frog/example
-+ modify gen_proto.sh `--proto_path` to your protobuf include director
-+ go generate
 + go build
 + ./example
 ```

@@ -1,11 +1,10 @@
 package main
 
-//go:generate ./gen_proto.sh
-
 import (
 	"context"
 	"errors"
 	"log"
+	"sync"
 	"time"
 
 	proto "github.com/golang/protobuf/proto"
@@ -35,10 +34,12 @@ func (impl *EchoServiceImpl) Echo2(ctx context.Context, in *ProtoEchoRequest, ou
 }
 
 type Call struct {
+	mu       *sync.Mutex
 	request  proto.Message
 	response proto.Message
-	ch       chan frog.RpcCall
+	ch       chan struct{}
 	err      error
+	hasDone  bool
 }
 
 func (c *Call) Request() proto.Message {
@@ -53,26 +54,30 @@ func (c *Call) Error() error {
 	return c.err
 }
 
-func (c *Call) Done() chan frog.RpcCall {
+func (c *Call) Done() chan struct{} {
 	return c.ch
 }
 
-func (c *Call) done() {
-	select {
-	case c.ch <- c:
-	default:
-		// dont block
+func (c *Call) done(err error) {
+	c.mu.Lock()
+	if !c.hasDone {
+		c.hasDone = true
+		c.err = err
+		close(c.ch)
 	}
+	c.mu.Unlock()
 }
 
 type Channel int
 
 func (_ *Channel) Go(method *frog.MethodDesc, ctx context.Context, request proto.Message, response proto.Message) frog.RpcCall {
 	call := &Call{
+		new(sync.Mutex),
 		request,
 		response,
-		make(chan frog.RpcCall, 5),
+		make(chan struct{}),
 		nil,
+		false,
 	}
 	var rpcMeth *frog.RpcMethod
 	for _, meth := range methods {
@@ -82,8 +87,7 @@ func (_ *Channel) Go(method *frog.MethodDesc, ctx context.Context, request proto
 		}
 	}
 	if rpcMeth == nil {
-		call.err = errors.New("method not found")
-		call.done()
+		call.done(errors.New("method not found"))
 		return call
 	}
 
@@ -91,9 +95,19 @@ func (_ *Channel) Go(method *frog.MethodDesc, ctx context.Context, request proto
 	go func() {
 		time.Sleep(time.Second * 5)
 		err := frog.CallMethod(rpcMeth, ctx, request, response)
-		call.err = err
-		call.done()
+		call.done(err)
 	}()
+
+	if _, ok := ctx.Deadline(); ok {
+		go func() {
+			select {
+			case <-call.Done():
+				// already done, do nothing
+			case <-ctx.Done():
+				call.done(errors.New("request timeout"))
+			}
+		}()
+	}
 
 	return call
 }
@@ -116,20 +130,20 @@ func main() {
 
 	// make a sync rpc
 	log.Println("begin a sync rpc")
-	err = stub.Echo(context.TODO(), &request, &response)
+	ctx, _ := context.WithTimeout(context.Background(), time.Second)
+	err = stub.Echo(ctx, &request, &response)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+	} else if request.GetText() != response.GetText() {
+		log.Println("Text not match:", request.GetText(), "vs", response.GetText())
+	} else {
+		log.Println(request.GetText(), response.GetText())
 	}
-	if request.GetText() != response.GetText() {
-		log.Fatal("Text not match:", request.GetText(), "vs", response.GetText())
-	}
-	log.Println(request.GetText(), response.GetText())
 	log.Println("end a sync rpc")
 
 	// make a async rpc
 	log.Println("begin a async rpc")
 	call := stub.AsyncEcho(context.TODO(), &request, &response)
-	log.Println("get a call from async call:", call)
 
 	// wating for response
 loop:
@@ -143,11 +157,11 @@ loop:
 		}
 	}
 	if call.Error() != nil {
-		log.Fatal(call.Error())
+		log.Println(call.Error())
+	} else if request.GetText() != response.GetText() {
+		log.Println("Text not match:", request.GetText(), "vs", response.GetText())
+	} else {
+		log.Println(request.GetText(), response.GetText())
 	}
-	if request.GetText() != response.GetText() {
-		log.Fatal("Text not match:", request.GetText(), "vs", response.GetText())
-	}
-	log.Println(request.GetText(), response.GetText())
 	log.Println("end a async rpc")
 }
