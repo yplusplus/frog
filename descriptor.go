@@ -16,10 +16,12 @@ type ServiceDesc struct {
 	methods []*MethodDesc
 }
 
+// NumMethod returns the number of methods of service
 func (sd *ServiceDesc) NumMethod() int {
 	return len(sd.methods)
 }
 
+// Method returns the i-th method descriptor of service
 func (sd *ServiceDesc) Method(index int) *MethodDesc {
 	if index < 0 || index >= sd.NumMethod() {
 		panic("")
@@ -33,11 +35,16 @@ type MethodDesc struct {
 	service *ServiceDesc
 }
 
+// GetServiceDesc returns method's service descriptor
+func (md *MethodDesc) GetServiceDesc() *ServiceDesc {                                                                             
+    return md.service
+}
+
 var (
 	serviceDescriptors = make(map[string]*ServiceDesc)
 )
 
-// GenerateServiceAndMethodDesc called by generated code to generate ServiceDesc and MethodDesc
+// GenerateServiceDesc called by generated code to generate ServiceDesc and MethodDesc
 func GenerateServiceDesc(fileDescriptor []byte) {
 	r, err := gzip.NewReader(bytes.NewReader(fileDescriptor))
 	if err != nil {
