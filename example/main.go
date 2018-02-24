@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"sync"
 	"time"
 
 	proto "github.com/golang/protobuf/proto"
@@ -33,52 +32,11 @@ func (impl *EchoServiceImpl) Echo2(ctx context.Context, in *ProtoEchoRequest, ou
 	return nil
 }
 
-type Call struct {
-	mu       *sync.Mutex
-	request  proto.Message
-	response proto.Message
-	ch       chan struct{}
-	err      error
-	hasDone  bool
-}
-
-func (c *Call) Request() proto.Message {
-	return c.request
-}
-
-func (c *Call) Response() proto.Message {
-	return c.response
-}
-
-func (c *Call) Error() error {
-	return c.err
-}
-
-func (c *Call) Done() chan struct{} {
-	return c.ch
-}
-
-func (c *Call) done(err error) {
-	c.mu.Lock()
-	if !c.hasDone {
-		c.hasDone = true
-		c.err = err
-		close(c.ch)
-	}
-	c.mu.Unlock()
-}
-
 type Channel int
 
 func (_ *Channel) Go(method *frog.MethodDesc, ctx context.Context, request proto.Message, response proto.Message) frog.RpcCall {
-	call := &Call{
-		new(sync.Mutex),
-		request,
-		response,
-		make(chan struct{}),
-		nil,
-		false,
-	}
+	call := frog.NewDefaultCall(request, response)
+
 	var rpcMeth *frog.RpcMethod
 	for _, meth := range methods {
 		if meth.Descriptor() == method {
@@ -87,7 +45,7 @@ func (_ *Channel) Go(method *frog.MethodDesc, ctx context.Context, request proto
 		}
 	}
 	if rpcMeth == nil {
-		call.done(errors.New("method not found"))
+		call.Close(errors.New("method not found"))
 		return call
 	}
 
@@ -95,16 +53,27 @@ func (_ *Channel) Go(method *frog.MethodDesc, ctx context.Context, request proto
 	go func() {
 		time.Sleep(time.Second * 5)
 		err := frog.CallMethod(rpcMeth, ctx, request, response)
-		call.done(err)
+		call.Close(err)
 	}()
 
 	if _, ok := ctx.Deadline(); ok {
 		go func() {
 			select {
 			case <-call.Done():
-				// already done, do nothing
+				// already close, do nothing
 			case <-ctx.Done():
-				call.done(errors.New("request timeout"))
+				call.Close(errors.New("request timeout"))
+			}
+		}()
+	} else {
+		go func() {
+			t := time.NewTimer(time.Second)
+			select {
+			case <-call.Done():
+				// already closed, stop the timer
+				t.Stop()
+			case <-t.C:
+				call.Close(errors.New("request timeout"))
 			}
 		}()
 	}

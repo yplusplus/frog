@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 
 	proto "github.com/golang/protobuf/proto"
 )
@@ -18,6 +19,54 @@ type RpcCall interface {
 	Response() proto.Message // The response from rpc
 	Error() error            // After completion, the error status.
 	Done() chan struct{}     // Strobes when call is complete.
+}
+
+// DefaultCall implements RpcCall interface and is enough to deal with most situations.
+type DefaultCall struct {
+	request  proto.Message
+	response proto.Message
+	ch       chan struct{}
+
+	mu      *sync.Mutex // protect following fields
+	err     error
+	hasDone bool // protect ch from being closed twice
+}
+
+func NewDefaultCall(request, response proto.Message) *DefaultCall {
+	return &DefaultCall{
+		request,
+		response,
+		make(chan struct{}),
+		new(sync.Mutex),
+		nil,
+		false,
+	}
+}
+
+func (c *DefaultCall) Request() proto.Message {
+	return c.request
+}
+
+func (c *DefaultCall) Response() proto.Message {
+	return c.response
+}
+
+func (c *DefaultCall) Error() error {
+	return c.err
+}
+
+func (c *DefaultCall) Done() chan struct{} {
+	return c.ch
+}
+
+func (c *DefaultCall) Close(err error) {
+	c.mu.Lock()
+	if !c.hasDone {
+		c.hasDone = true
+		c.err = err
+		close(c.ch)
+	}
+	c.mu.Unlock()
 }
 
 // RpcChannel represents a communication line to a Service which can
@@ -112,6 +161,7 @@ func RegisterService(sd *ServiceDesc, service interface{}, register MethodsRegis
 			panic(fmt.Sprintln("method", mname, "context type is not context.Context:", ctxType))
 		}
 
+		// TODO: check if request and response are proto.Message
 		requestType := mtype.In(2)
 		if requestType.Kind() != reflect.Ptr {
 			panic(fmt.Sprintln("method", mname, "request type not a pointer:", requestType))

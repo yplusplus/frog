@@ -24,7 +24,7 @@ func (sd *ServiceDesc) NumMethod() int {
 // Method returns the i-th method descriptor of service
 func (sd *ServiceDesc) Method(index int) *MethodDesc {
 	if index < 0 || index >= sd.NumMethod() {
-		panic("")
+		panic(fmt.Errorf("index out of range: %d", index))
 	}
 	return sd.methods[index]
 }
